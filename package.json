@@ -1,0 +1,31 @@
+{
+  "name": "northstar-talent-os",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev --parallel",
+    "dev:worker": "pnpm --filter @northstar/worker dev",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "format": "prettier --write .",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "db:generate": "pnpm --filter @northstar/database generate",
+    "db:migrate": "pnpm --filter @northstar/database migrate",
+    "db:seed": "pnpm --filter @northstar/database seed",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "prettier": "3.6.2",
+    "turbo": "2.11.7",
+    "typescript": "7.0.2"
+  }
+}

@@ -1,0 +1,597 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum WorkspaceType {
+  EMPLOYER
+  AGENCY
+  UNIVERSITY
+}
+
+enum Role {
+  PLATFORM_ADMIN
+  OWNER
+  ADMIN
+  HIRING_MANAGER
+  RECRUITER
+  INTERVIEWER
+  PLACEMENT_COORDINATOR
+  VIEWER
+  STUDENT
+  CANDIDATE
+}
+
+enum JobStatus {
+  DRAFT
+  OPEN
+  PAUSED
+  CLOSED
+}
+
+enum AssessmentType {
+  RESUME_SCREEN
+  AI_INTERVIEW
+  HUMAN_INTERVIEW
+  CODING_TEST
+  PROMPT_ASSESSMENT
+}
+
+enum AssessmentStatus {
+  PENDING
+  SCHEDULED
+  IN_PROGRESS
+  PROCESSING
+  COMPLETED
+  CANCELLED
+  FAILED
+  SHORTLISTED
+  REJECTED
+}
+
+enum ClientStatus {
+  PROSPECT
+  BRIEFING
+  ACTIVE
+  PAUSED
+}
+
+enum FeeType {
+  PERCENTAGE
+  FLAT
+}
+
+enum DriveStatus {
+  DRAFT
+  PROPOSED
+  PUBLISHED
+  CLOSED
+}
+
+enum ApplicationStatus {
+  APPLIED
+  SHORTLISTED
+  INTERVIEWING
+  OFFERED
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum OfferStatus {
+  ROLLED
+  ACCEPTED
+  JOINED
+  DEFERRED
+  DECLINED
+  REVOKED
+  RENEGED
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+model User {
+  id              String           @id @default(cuid())
+  email           String           @unique
+  name            String
+  passwordHash    String?
+  emailVerifiedAt DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  memberships     Membership[]
+  candidates      Candidate[]
+  studentProfile  StudentProfile?
+  practiceAttempts PracticeAttempt[]
+  auditEvents     AuditEvent[]
+  meetings        Meeting[]      @relation("MeetingOrganizer")
+  authoredNotes   CandidateNote[] @relation("CandidateNoteAuthor")
+  sessions        Session[]
+}
+
+model Session {
+  id        String    @id
+  userId    String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt, revokedAt])
+}
+
+model Organization {
+  id               String            @id @default(cuid())
+  slug             String            @unique
+  name             String
+  type             WorkspaceType
+  logoUrl          String?
+  primaryColor     String             @default("#123f31")
+  customDomain     String?            @unique
+  modules          Json               @default("{}")
+  creditBalance    Int                @default(0)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  memberships      Membership[]
+  clients          Client[]
+  jobs             Job[]
+  candidates       Candidate[]
+  pipelineStages   PipelineStage[]
+  creditLedger     CreditLedger[]
+  auditEvents      AuditEvent[]
+  campuses         Campus[]
+  placementSeasons PlacementSeason[]
+  companies        PlacementCompany[]
+  apiKeys          ApiKey[]
+  webhookEndpoints WebhookEndpoint[]
+  meetings         Meeting[]
+  candidateNotes   CandidateNote[]
+}
+
+model Membership {
+  id             String       @id @default(cuid())
+  userId         String
+  organizationId String
+  role           Role
+  createdAt      DateTime     @default(now())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId, role])
+}
+
+model Client {
+  id              String        @id @default(cuid())
+  organizationId  String
+  name            String
+  slug            String
+  description     String?
+  status          ClientStatus  @default(PROSPECT)
+  logoUrl         String?
+  primaryColor    String?
+  ownerName       String?
+  industry        String?
+  feeType         FeeType?
+  feeAmount       Decimal?      @db.Decimal(12, 2)
+  currency        String        @default("USD")
+  guaranteeDays   Int?
+  billingEmail    String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  jobs            Job[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, status])
+}
+
+model Job {
+  id                String       @id @default(cuid())
+  organizationId    String
+  clientId          String?
+  title             String
+  location          String?
+  description       String       @db.Text
+  language          String       @default("English")
+  voice             String       @default("Aria")
+  status            JobStatus    @default(DRAFT)
+  workflowEnabled   Boolean      @default(false)
+  companyBranding   Boolean      @default(true)
+  salaryMin         Decimal?     @db.Decimal(12, 2)
+  salaryMax         Decimal?     @db.Decimal(12, 2)
+  currency          String       @default("USD")
+  feeOverride       Decimal?     @db.Decimal(12, 2)
+  guaranteeOverride Int?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client            Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  requirements      Requirement[]
+  rounds            Round[]
+  candidateJobs     CandidateJob[]
+  meetings          Meeting[]
+
+  @@index([organizationId, status])
+  @@index([clientId])
+}
+
+model Requirement {
+  id        String @id @default(cuid())
+  jobId     String
+  name      String
+  weight    Int
+  sortOrder Int    @default(0)
+  job       Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, name])
+}
+
+model Round {
+  id                String             @id @default(cuid())
+  jobId             String
+  title             String
+  type              AssessmentType
+  sequence          Int
+  durationMinutes   Int                @default(20)
+  difficulty        String             @default("MEDIUM")
+  proctoringEnabled Boolean            @default(false)
+  desktopRequired   Boolean            @default(false)
+  promotionScore    Int?
+  rejectionScore    Int?
+  questions         Json               @default("[]")
+  createdAt         DateTime           @default(now())
+  job               Job                @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  assessments       Assessment[]
+
+  @@unique([jobId, sequence])
+}
+
+model Candidate {
+  id             String         @id @default(cuid())
+  organizationId String
+  userId         String?
+  name           String
+  email          String
+  phone          String?
+  headline       String?
+  resumeUrl      String?
+  source         String         @default("MANUAL")
+  ownerName      String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  candidateJobs  CandidateJob[]
+  assessments    Assessment[]
+  meetings       Meeting[]
+  notes          CandidateNote[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId, createdAt])
+}
+
+model PipelineStage {
+  id             String         @id @default(cuid())
+  organizationId String
+  name           String
+  color          String         @default("#9ed9ff")
+  sortOrder      Int
+  terminal       Boolean        @default(false)
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  candidateJobs  CandidateJob[]
+
+  @@unique([organizationId, name])
+  @@unique([organizationId, sortOrder])
+}
+
+model CandidateJob {
+  id          String         @id @default(cuid())
+  candidateId String
+  jobId       String
+  stageId     String?
+  status      String         @default("ACTIVE")
+  score       Int?
+  appliedAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  candidate   Candidate      @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job         Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  stage       PipelineStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+
+  @@unique([candidateId, jobId])
+  @@index([jobId, stageId])
+}
+
+model CandidateNote {
+  id             String       @id @default(cuid())
+  organizationId String
+  candidateId    String
+  authorId       String
+  content        String       @db.Text
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  candidate      Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  author         User         @relation("CandidateNoteAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, candidateId, createdAt])
+}
+
+model Meeting {
+  id             String        @id @default(cuid())
+  organizationId String
+  candidateId    String?
+  jobId          String?
+  organizerId    String
+  title          String
+  startsAt       DateTime
+  durationMinutes Int          @default(30)
+  status         MeetingStatus @default(SCHEDULED)
+  location       String?
+  attendees      Json          @default("[]")
+  notes          String?       @db.Text
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  candidate      Candidate?    @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  job            Job?          @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  organizer      User          @relation("MeetingOrganizer", fields: [organizerId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, startsAt, status])
+  @@index([candidateId, startsAt])
+}
+
+model Assessment {
+  id             String           @id @default(cuid())
+  candidateId    String
+  roundId        String
+  status         AssessmentStatus @default(PENDING)
+  score          Int?
+  summary        String?
+  launchTokenHash String?         @unique
+  launchExpiresAt DateTime?
+  consentedAt    DateTime?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  transcript     Json?
+  submission     Json?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  candidate      Candidate        @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  round           Round            @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  evidence        ScoreEvidence[]
+  integrityEvents IntegrityEvent[]
+
+  @@index([candidateId, status])
+  @@index([roundId, status])
+}
+
+model ScoreEvidence {
+  id           String     @id @default(cuid())
+  assessmentId String
+  criterion    String
+  score        Int
+  weight       Int
+  rationale    String     @db.Text
+  evidence     String     @db.Text
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+}
+
+model IntegrityEvent {
+  id           String     @id @default(cuid())
+  assessmentId String
+  type         String
+  severity     String     @default("INFO")
+  detail       Json       @default("{}")
+  occurredAt   DateTime   @default(now())
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId, occurredAt])
+}
+
+model CreditLedger {
+  id             String       @id @default(cuid())
+  organizationId String
+  amount         Int
+  balanceAfter   Int
+  reason         String
+  idempotencyKey String
+  referenceType  String?
+  referenceId    String?
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, createdAt])
+}
+
+model AuditEvent {
+  id             String        @id @default(cuid())
+  organizationId String?
+  actorId        String?
+  action         String
+  entityType     String
+  entityId       String?
+  metadata       Json          @default("{}")
+  ipAddress      String?
+  createdAt      DateTime      @default(now())
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  actor          User?         @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+}
+
+model Campus {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  city           String?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  batches        Batch[]
+
+  @@unique([organizationId, name])
+}
+
+model Batch {
+  id             String           @id @default(cuid())
+  campusId       String
+  name           String
+  graduationYear Int
+  branches       String[]
+  campus         Campus           @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  students       StudentProfile[]
+
+  @@unique([campusId, name])
+}
+
+model StudentProfile {
+  id              String        @id @default(cuid())
+  userId          String        @unique
+  organizationId  String
+  batchId         String?
+  registrationNo  String
+  branch          String
+  cgpa            Decimal?      @db.Decimal(3, 2)
+  graduationYear  Int
+  profileComplete Int           @default(0)
+  blacklisted     Boolean       @default(false)
+  placed          Boolean       @default(false)
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  batch           Batch?        @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  applications    Application[]
+
+  @@unique([organizationId, registrationNo])
+  @@index([organizationId, branch])
+}
+
+model PracticeAttempt {
+  id        String   @id @default(cuid())
+  userId    String
+  category  String
+  prompt    String   @db.Text
+  response  String   @db.Text
+  score     Int
+  feedback  Json
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, category])
+}
+
+model PlacementSeason {
+  id             String           @id @default(cuid())
+  organizationId String
+  name           String
+  academicYear   String
+  active         Boolean          @default(true)
+  offerCap       Int              @default(1)
+  upgradeMultiple Decimal?        @db.Decimal(4, 2)
+  createdAt      DateTime         @default(now())
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  drives         PlacementDrive[]
+
+  @@unique([organizationId, academicYear])
+}
+
+model PlacementCompany {
+  id             String           @id @default(cuid())
+  organizationId String
+  name           String
+  tier           String           @default("ENTERPRISE")
+  recruiterName  String?
+  recruiterEmail String?
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  drives         PlacementDrive[]
+
+  @@unique([organizationId, name])
+}
+
+model PlacementDrive {
+  id               String          @id @default(cuid())
+  seasonId         String
+  companyId        String
+  title            String
+  description      String          @db.Text
+  status           DriveStatus     @default(DRAFT)
+  jobType          String
+  locations        String[]
+  applyBy           DateTime
+  openings          Int
+  ctcMin            Decimal?       @db.Decimal(12, 2)
+  ctcMax            Decimal?       @db.Decimal(12, 2)
+  currency          String         @default("INR")
+  eligibleBranches String[]
+  minCgpa           Decimal?       @db.Decimal(3, 2)
+  allowPlaced       Boolean        @default(false)
+  createdAt         DateTime       @default(now())
+  season            PlacementSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  company           PlacementCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  applications      Application[]
+
+  @@index([seasonId, status])
+}
+
+model Application {
+  id          String            @id @default(cuid())
+  driveId     String
+  studentId   String
+  status      ApplicationStatus @default(APPLIED)
+  appliedAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  drive       PlacementDrive    @relation(fields: [driveId], references: [id], onDelete: Cascade)
+  student     StudentProfile    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  offer       Offer?
+
+  @@unique([driveId, studentId])
+  @@index([studentId, status])
+}
+
+model Offer {
+  id          String      @id @default(cuid())
+  applicationId String    @unique
+  status      OfferStatus @default(ROLLED)
+  ctc         Decimal     @db.Decimal(12, 2)
+  currency    String      @default("INR")
+  joiningDate DateTime?
+  offeredAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+model ApiKey {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  prefix         String
+  keyHash        String       @unique
+  environment    String
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, environment])
+}
+
+model WebhookEndpoint {
+  id             String       @id @default(cuid())
+  organizationId String
+  url            String
+  secretHash     String
+  events         String[]
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, active])
+}
