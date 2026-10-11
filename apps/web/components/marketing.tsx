@@ -67,7 +67,7 @@ export function HomePage() {
           <div className="feature-grid">
             <article className="card feature-card"><div className="feature-icon"><UsersRound size={21} /></div><div><h3>Run hiring end to end</h3><p>Roles, sourcing, multi-round workflows, pipeline, interviews, evidence-backed reports, and placements.</p></div></article>
             <article className="card feature-card"><div className="feature-icon"><GraduationCap size={21} /></div><div><h3>Prepare an entire campus</h3><p>Readiness tools for every student and a placement ERP for every drive, offer, and joining outcome.</p></div></article>
-            <article className="card feature-card"><div className="feature-icon"><Code2 size={21} /></div><div><h3>Measure work, not keywords</h3><p>Real coding tasks, adaptive interviews, prompt exercises, and transparent weighted scoring.</p></div></article>
+            <article className="card feature-card"><div className="feature-icon"><Code2 size={21} /></div><div><h3>Measure work, not keywords</h3><p>Structured interviews, role-specific evidence, and transparent weighted scoring. Coding tasks unlock when isolated execution is configured.</p></div></article>
           </div>
         </div>
       </section>

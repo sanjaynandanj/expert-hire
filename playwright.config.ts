@@ -8,7 +8,9 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: "http://127.0.0.1:3000",
+    // Match an already-running app's API hostname so browser session cookies are
+    // not discarded as cross-site (localhost and 127.0.0.1 are different sites).
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000",
     trace: "on-first-retry",
     screenshot: "only-on-failure"
   },

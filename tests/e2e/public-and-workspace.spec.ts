@@ -28,6 +28,36 @@ test("candidate preparation dashboard renders its readiness evidence", async ({ 
   await expect(page.getByRole("button", { name: /Technical reasoning/ })).toBeVisible();
 });
 
+test("pipeline ordering changes columns without moving candidates", async ({ page }) => {
+  await page.goto("/workspace/pipeline");
+  await expect(page.locator(".candidate-card h3")).toHaveCount(4);
+  const people = (await page.locator(".candidate-card h3").allTextContents()).sort();
+  await expect(page.locator(".kanban-head").first()).toContainText("New signal");
+  await expect(page.getByRole("button", { name: "Move New signal earlier", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Move New signal later", exact: true }).click();
+  await expect(page.locator(".kanban-head").first()).toContainText("Human review");
+  await expect(page.locator(".kanban-head").nth(1)).toContainText("New signal");
+  expect((await page.locator(".candidate-card h3").allTextContents()).sort()).toEqual(people);
+  await expect(page.locator(".kanban-column").nth(1).getByRole("heading", { name: "Maya Chen" })).toBeVisible();
+  await page.getByRole("button", { name: "Move New signal earlier", exact: true }).click();
+  await expect(page.locator(".kanban-head").first()).toContainText("New signal");
+  await expect(page.getByRole("button", { name: "Move Decision later", exact: true })).toBeDisabled();
+});
+
+test("role editor loads saved assessment rounds and supports draft removal", async ({ page }) => {
+  await page.goto("/workspace/jobs");
+  await page.getByRole("button", { name: "Edit role" }).first().click();
+  await expect(page.getByRole("heading", { name: "Edit Senior Platform Engineer" })).toBeVisible();
+  await expect(page.getByLabel("Round title")).toHaveCount(4);
+  await expect(page.getByLabel("Round title").first()).toHaveValue("Resume evidence");
+  await page.getByRole("button", { name: "Add round", exact: true }).click();
+  await expect(page.getByLabel("Round title")).toHaveCount(5);
+  await page.getByRole("button", { name: "Remove draft", exact: true }).click();
+  await expect(page.getByLabel("Round title")).toHaveCount(4);
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Edit Senior Platform Engineer" })).toHaveCount(0);
+});
+
 test("candidate can consent, complete, and submit a local assessment", async ({ page }) => {
   await page.goto("/assess/demo-platform-2026");
   await page.getByRole("button", { name: "Run browser check" }).click();

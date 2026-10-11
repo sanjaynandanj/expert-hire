@@ -20,4 +20,5 @@ jobs:
       - run: pnpm db:generate
       - run: pnpm typecheck
       - run: pnpm test
+      - run: node --test ops/backup.test.mjs
       - run: pnpm build

@@ -26,6 +26,11 @@ enum Role {
   CANDIDATE
 }
 
+enum AccountTokenPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
 enum JobStatus {
   DRAFT
   OPEN
@@ -65,6 +70,13 @@ enum FeeType {
   FLAT
 }
 
+enum StaffingInvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  VOID
+}
+
 enum DriveStatus {
   DRAFT
   PROPOSED
@@ -99,22 +111,36 @@ enum MeetingStatus {
   NO_SHOW
 }
 
+enum WebhookDeliveryStatus {
+  PENDING
+  PROCESSING
+  DELIVERED
+  FAILED
+}
+
 model User {
-  id              String           @id @default(cuid())
-  email           String           @unique
-  name            String
-  passwordHash    String?
-  emailVerifiedAt DateTime?
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  memberships     Membership[]
-  candidates      Candidate[]
-  studentProfile  StudentProfile?
-  practiceAttempts PracticeAttempt[]
-  auditEvents     AuditEvent[]
-  meetings        Meeting[]      @relation("MeetingOrganizer")
-  authoredNotes   CandidateNote[] @relation("CandidateNoteAuthor")
-  sessions        Session[]
+  id                 String                @id @default(cuid())
+  email              String                @unique
+  name               String
+  passwordHash       String?
+  emailVerifiedAt    DateTime?
+  mfaSecretEncrypted String?
+  mfaEnabledAt       DateTime?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  memberships        Membership[]
+  candidates         Candidate[]
+  studentProfile     StudentProfile?
+  practiceAttempts   PracticeAttempt[]
+  auditEvents        AuditEvent[]
+  meetings           Meeting[]             @relation("MeetingOrganizer")
+  authoredNotes      CandidateNote[]       @relation("CandidateNoteAuthor")
+  sessions           Session[]
+  accountTokens      AccountToken[]
+  sentInvitations    WorkspaceInvitation[] @relation("WorkspaceInvitationSender")
+  mfaRecoveryCodes   MfaRecoveryCode[]
+  notifications      UserNotification[]
+  novaRuns           NovaRun[]
 }
 
 model Session {
@@ -130,31 +156,36 @@ model Session {
 }
 
 model Organization {
-  id               String            @id @default(cuid())
-  slug             String            @unique
-  name             String
-  type             WorkspaceType
-  logoUrl          String?
-  primaryColor     String             @default("#123f31")
-  customDomain     String?            @unique
-  modules          Json               @default("{}")
-  creditBalance    Int                @default(0)
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  memberships      Membership[]
-  clients          Client[]
-  jobs             Job[]
-  candidates       Candidate[]
-  pipelineStages   PipelineStage[]
-  creditLedger     CreditLedger[]
-  auditEvents      AuditEvent[]
-  campuses         Campus[]
-  placementSeasons PlacementSeason[]
-  companies        PlacementCompany[]
-  apiKeys          ApiKey[]
-  webhookEndpoints WebhookEndpoint[]
-  meetings         Meeting[]
-  candidateNotes   CandidateNote[]
+  id                 String                @id @default(cuid())
+  slug               String                @unique
+  name               String
+  type               WorkspaceType
+  logoUrl            String?
+  primaryColor       String                @default("#123f31")
+  customDomain       String?               @unique
+  modules            Json                  @default("{}")
+  creditBalance      Int                   @default(0)
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  memberships        Membership[]
+  clients            Client[]
+  jobs               Job[]
+  candidates         Candidate[]
+  pipelineStages     PipelineStage[]
+  creditLedger       CreditLedger[]
+  auditEvents        AuditEvent[]
+  campuses           Campus[]
+  placementSeasons   PlacementSeason[]
+  companies          PlacementCompany[]
+  apiKeys            ApiKey[]
+  webhookEndpoints   WebhookEndpoint[]
+  meetings           Meeting[]
+  candidateNotes     CandidateNote[]
+  invitations        WorkspaceInvitation[]
+  notifications      UserNotification[]
+  staffingPlacements StaffingPlacement[]
+  staffingInvoices   StaffingInvoice[]
+  novaRuns           NovaRun[]
 }
 
 model Membership {
@@ -170,59 +201,120 @@ model Membership {
   @@index([organizationId, role])
 }
 
+model AccountToken {
+  id         String              @id @default(cuid())
+  userId     String
+  tokenHash  String              @unique
+  purpose    AccountTokenPurpose
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime            @default(now())
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, expiresAt])
+}
+
+model MfaRecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String    @unique
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+}
+
+model UserNotification {
+  id             String       @id @default(cuid())
+  userId         String
+  organizationId String
+  type           String
+  title          String
+  body           String       @db.Text
+  data           Json         @default("{}")
+  readAt         DateTime?
+  createdAt      DateTime     @default(now())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, organizationId, readAt, createdAt])
+}
+
+model WorkspaceInvitation {
+  id             String       @id @default(cuid())
+  organizationId String
+  invitedById    String
+  email          String
+  role           Role
+  tokenHash      String       @unique
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy      User         @relation("WorkspaceInvitationSender", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, email, acceptedAt, revokedAt])
+  @@index([expiresAt])
+}
+
 model Client {
-  id              String        @id @default(cuid())
-  organizationId  String
-  name            String
-  slug            String
-  description     String?
-  status          ClientStatus  @default(PROSPECT)
-  logoUrl         String?
-  primaryColor    String?
-  ownerName       String?
-  industry        String?
-  feeType         FeeType?
-  feeAmount       Decimal?      @db.Decimal(12, 2)
-  currency        String        @default("USD")
-  guaranteeDays   Int?
-  billingEmail    String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  jobs            Job[]
+  id                 String              @id @default(cuid())
+  organizationId     String
+  name               String
+  slug               String
+  description        String?
+  status             ClientStatus        @default(PROSPECT)
+  logoUrl            String?
+  primaryColor       String?
+  ownerName          String?
+  industry           String?
+  feeType            FeeType?
+  feeAmount          Decimal?            @db.Decimal(12, 2)
+  currency           String              @default("USD")
+  guaranteeDays      Int?
+  billingEmail       String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  jobs               Job[]
+  staffingPlacements StaffingPlacement[]
 
   @@unique([organizationId, slug])
   @@index([organizationId, status])
 }
 
 model Job {
-  id                String       @id @default(cuid())
-  organizationId    String
-  clientId          String?
-  title             String
-  location          String?
-  description       String       @db.Text
-  language          String       @default("English")
-  voice             String       @default("Aria")
-  status            JobStatus    @default(DRAFT)
-  workflowEnabled   Boolean      @default(false)
-  companyBranding   Boolean      @default(true)
-  salaryMin         Decimal?     @db.Decimal(12, 2)
-  salaryMax         Decimal?     @db.Decimal(12, 2)
-  currency          String       @default("USD")
-  feeOverride       Decimal?     @db.Decimal(12, 2)
-  guaranteeOverride Int?
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
-  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  client            Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  requirements      Requirement[]
-  rounds            Round[]
-  candidateJobs     CandidateJob[]
-  meetings          Meeting[]
+  id                 String              @id @default(cuid())
+  organizationId     String
+  clientId           String?
+  title              String
+  location           String?
+  description        String              @db.Text
+  language           String              @default("English")
+  voice              String              @default("Aria")
+  status             JobStatus           @default(DRAFT)
+  workflowEnabled    Boolean             @default(false)
+  companyBranding    Boolean             @default(true)
+  salaryMin          Decimal?            @db.Decimal(12, 2)
+  salaryMax          Decimal?            @db.Decimal(12, 2)
+  currency           String              @default("USD")
+  feeOverride        Decimal?            @db.Decimal(12, 2)
+  guaranteeOverride  Int?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client             Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  requirements       Requirement[]
+  rounds             Round[]
+  candidateJobs      CandidateJob[]
+  staffingPlacements StaffingPlacement[]
+  meetings           Meeting[]
 
   @@index([organizationId, status])
   @@index([clientId])
+  @@index([organizationId, status, createdAt(sort: Desc), id(sort: Desc)], map: "Job_public_page_idx")
 }
 
 model Requirement {
@@ -237,27 +329,28 @@ model Requirement {
 }
 
 model Round {
-  id                String             @id @default(cuid())
+  id                String         @id @default(cuid())
   jobId             String
   title             String
   type              AssessmentType
   sequence          Int
-  durationMinutes   Int                @default(20)
-  difficulty        String             @default("MEDIUM")
-  proctoringEnabled Boolean            @default(false)
-  desktopRequired   Boolean            @default(false)
+  durationMinutes   Int            @default(20)
+  difficulty        String         @default("MEDIUM")
+  proctoringEnabled Boolean        @default(false)
+  desktopRequired   Boolean        @default(false)
   promotionScore    Int?
   rejectionScore    Int?
-  questions         Json               @default("[]")
-  createdAt         DateTime           @default(now())
-  job               Job                @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  questions         Json           @default("[]")
+  retiredAt         DateTime?
+  createdAt         DateTime       @default(now())
+  job               Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
   assessments       Assessment[]
 
   @@unique([jobId, sequence])
 }
 
 model Candidate {
-  id             String         @id @default(cuid())
+  id             String          @id @default(cuid())
   organizationId String
   userId         String?
   name           String
@@ -265,12 +358,12 @@ model Candidate {
   phone          String?
   headline       String?
   resumeUrl      String?
-  source         String         @default("MANUAL")
+  source         String          @default("MANUAL")
   ownerName      String?
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user           User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
   candidateJobs  CandidateJob[]
   assessments    Assessment[]
   meetings       Meeting[]
@@ -278,6 +371,7 @@ model Candidate {
 
   @@unique([organizationId, email])
   @@index([organizationId, createdAt])
+  @@index([organizationId, createdAt(sort: Desc), id(sort: Desc)], map: "Candidate_public_page_idx")
 }
 
 model PipelineStage {
@@ -295,20 +389,68 @@ model PipelineStage {
 }
 
 model CandidateJob {
-  id          String         @id @default(cuid())
-  candidateId String
-  jobId       String
-  stageId     String?
-  status      String         @default("ACTIVE")
-  score       Int?
-  appliedAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  candidate   Candidate      @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  job         Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  stage       PipelineStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  id                String             @id @default(cuid())
+  candidateId       String
+  jobId             String
+  stageId           String?
+  status            String             @default("ACTIVE")
+  score             Int?
+  appliedAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  candidate         Candidate          @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  job               Job                @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  stage             PipelineStage?     @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  staffingPlacement StaffingPlacement?
 
   @@unique([candidateId, jobId])
   @@index([jobId, stageId])
+}
+
+model StaffingPlacement {
+  id                  String           @id @default(cuid())
+  organizationId      String
+  clientId            String
+  jobId               String
+  candidateJobId      String           @unique
+  startDate           DateTime
+  salary              Decimal          @db.Decimal(12, 2)
+  salaryCurrency      String
+  feeAmount           Decimal          @db.Decimal(12, 2)
+  feeCurrency         String
+  feeType             FeeType
+  feeRate             Decimal          @db.Decimal(12, 2)
+  guaranteeUntil      DateTime?
+  guaranteeResolvedAt DateTime?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  organization        Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client              Client           @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  job                 Job              @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  candidateJob        CandidateJob     @relation(fields: [candidateJobId], references: [id], onDelete: Restrict)
+  invoice             StaffingInvoice?
+
+  @@index([organizationId, startDate])
+  @@index([clientId, guaranteeUntil])
+}
+
+model StaffingInvoice {
+  id             String                @id @default(cuid())
+  organizationId String
+  placementId    String                @unique
+  invoiceNumber  String
+  amount         Decimal               @db.Decimal(12, 2)
+  currency       String
+  status         StaffingInvoiceStatus @default(DRAFT)
+  issuedAt       DateTime?
+  dueAt          DateTime?
+  paidAt         DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  placement      StaffingPlacement     @relation(fields: [placementId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, invoiceNumber])
+  @@index([organizationId, status, createdAt])
 }
 
 model CandidateNote {
@@ -327,52 +469,62 @@ model CandidateNote {
 }
 
 model Meeting {
-  id             String        @id @default(cuid())
-  organizationId String
-  candidateId    String?
-  jobId          String?
-  organizerId    String
-  title          String
-  startsAt       DateTime
-  durationMinutes Int          @default(30)
-  status         MeetingStatus @default(SCHEDULED)
-  location       String?
-  attendees      Json          @default("[]")
-  notes          String?       @db.Text
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  candidate      Candidate?    @relation(fields: [candidateId], references: [id], onDelete: SetNull)
-  job            Job?          @relation(fields: [jobId], references: [id], onDelete: SetNull)
-  organizer      User          @relation("MeetingOrganizer", fields: [organizerId], references: [id], onDelete: Restrict)
+  id              String        @id @default(cuid())
+  organizationId  String
+  candidateId     String?
+  jobId           String?
+  organizerId     String
+  title           String
+  startsAt        DateTime
+  durationMinutes Int           @default(30)
+  status          MeetingStatus @default(SCHEDULED)
+  location        String?
+  attendees       Json          @default("[]")
+  notes           String?       @db.Text
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  organization    Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  candidate       Candidate?    @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  job             Job?          @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  organizer       User          @relation("MeetingOrganizer", fields: [organizerId], references: [id], onDelete: Restrict)
 
   @@index([organizationId, startsAt, status])
   @@index([candidateId, startsAt])
 }
 
 model Assessment {
-  id             String           @id @default(cuid())
-  candidateId    String
-  roundId        String
-  status         AssessmentStatus @default(PENDING)
-  score          Int?
-  summary        String?
-  launchTokenHash String?         @unique
+  id              String           @id @default(cuid())
+  candidateId     String
+  roundId         String
+  status          AssessmentStatus @default(PENDING)
+  score           Int?
+  summary         String?
+  launchTokenHash String?          @unique
   launchExpiresAt DateTime?
-  consentedAt    DateTime?
-  startedAt      DateTime?
-  completedAt    DateTime?
-  transcript     Json?
-  submission     Json?
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  candidate      Candidate        @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  consentedAt     DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  transcript      Json?
+  submission      Json?
+  submittedResponse String?        @db.Text
+  processingMode  String?
+  evaluationAttempts Int          @default(0)
+  evaluationToken String?
+  evaluationExpiresAt DateTime?
+  configuration   Json?
+  draft           Json?
+  draftRevision   Int              @default(0)
+  draftSavedAt    DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  candidate       Candidate        @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   round           Round            @relation(fields: [roundId], references: [id], onDelete: Cascade)
   evidence        ScoreEvidence[]
   integrityEvents IntegrityEvent[]
 
   @@index([candidateId, status])
   @@index([roundId, status])
+  @@index([status, processingMode, evaluationExpiresAt], map: "Assessment_processing_recovery_idx")
 }
 
 model ScoreEvidence {
@@ -405,6 +557,7 @@ model CreditLedger {
   balanceAfter   Int
   reason         String
   idempotencyKey String
+  requestHash    String?
   referenceType  String?
   referenceId    String?
   createdAt      DateTime     @default(now())
@@ -465,6 +618,12 @@ model StudentProfile {
   profileComplete Int           @default(0)
   blacklisted     Boolean       @default(false)
   placed          Boolean       @default(false)
+  currentCtc      Decimal?      @db.Decimal(12, 2)
+  currentCtcCurrency String?
+  placementSource String?
+  placementVerifiedAt DateTime?
+  profileCorrection Json?
+  profileCorrectionAt DateTime?
   user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   batch           Batch?        @relation(fields: [batchId], references: [id], onDelete: SetNull)
   applications    Application[]
@@ -489,16 +648,16 @@ model PracticeAttempt {
 }
 
 model PlacementSeason {
-  id             String           @id @default(cuid())
-  organizationId String
-  name           String
-  academicYear   String
-  active         Boolean          @default(true)
-  offerCap       Int              @default(1)
-  upgradeMultiple Decimal?        @db.Decimal(4, 2)
-  createdAt      DateTime         @default(now())
-  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  drives         PlacementDrive[]
+  id              String           @id @default(cuid())
+  organizationId  String
+  name            String
+  academicYear    String
+  active          Boolean          @default(true)
+  offerCap        Int              @default(1)
+  upgradeMultiple Decimal?         @db.Decimal(4, 2)
+  createdAt       DateTime         @default(now())
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  drives          PlacementDrive[]
 
   @@unique([organizationId, academicYear])
 }
@@ -517,55 +676,55 @@ model PlacementCompany {
 }
 
 model PlacementDrive {
-  id               String          @id @default(cuid())
+  id               String           @id @default(cuid())
   seasonId         String
   companyId        String
   title            String
-  description      String          @db.Text
-  status           DriveStatus     @default(DRAFT)
+  description      String           @db.Text
+  status           DriveStatus      @default(DRAFT)
   jobType          String
   locations        String[]
-  applyBy           DateTime
-  openings          Int
-  ctcMin            Decimal?       @db.Decimal(12, 2)
-  ctcMax            Decimal?       @db.Decimal(12, 2)
-  currency          String         @default("INR")
+  applyBy          DateTime
+  openings         Int
+  ctcMin           Decimal?         @db.Decimal(12, 2)
+  ctcMax           Decimal?         @db.Decimal(12, 2)
+  currency         String           @default("INR")
   eligibleBranches String[]
-  minCgpa           Decimal?       @db.Decimal(3, 2)
-  allowPlaced       Boolean        @default(false)
-  createdAt         DateTime       @default(now())
-  season            PlacementSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
-  company           PlacementCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  applications      Application[]
+  minCgpa          Decimal?         @db.Decimal(3, 2)
+  allowPlaced      Boolean          @default(false)
+  createdAt        DateTime         @default(now())
+  season           PlacementSeason  @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  company          PlacementCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  applications     Application[]
 
   @@index([seasonId, status])
 }
 
 model Application {
-  id          String            @id @default(cuid())
-  driveId     String
-  studentId   String
-  status      ApplicationStatus @default(APPLIED)
-  appliedAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  drive       PlacementDrive    @relation(fields: [driveId], references: [id], onDelete: Cascade)
-  student     StudentProfile    @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  offer       Offer?
+  id        String            @id @default(cuid())
+  driveId   String
+  studentId String
+  status    ApplicationStatus @default(APPLIED)
+  appliedAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  drive     PlacementDrive    @relation(fields: [driveId], references: [id], onDelete: Cascade)
+  student   StudentProfile    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  offer     Offer?
 
   @@unique([driveId, studentId])
   @@index([studentId, status])
 }
 
 model Offer {
-  id          String      @id @default(cuid())
-  applicationId String    @unique
-  status      OfferStatus @default(ROLLED)
-  ctc         Decimal     @db.Decimal(12, 2)
-  currency    String      @default("INR")
-  joiningDate DateTime?
-  offeredAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  id            String      @id @default(cuid())
+  applicationId String      @unique
+  status        OfferStatus @default(ROLLED)
+  ctc           Decimal     @db.Decimal(12, 2)
+  currency      String      @default("INR")
+  joiningDate   DateTime?
+  offeredAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 }
 
 model ApiKey {
@@ -575,6 +734,7 @@ model ApiKey {
   prefix         String
   keyHash        String       @unique
   environment    String
+  scopes         String[]     @default(["*"])
   lastUsedAt     DateTime?
   revokedAt      DateTime?
   createdAt      DateTime     @default(now())
@@ -584,14 +744,107 @@ model ApiKey {
 }
 
 model WebhookEndpoint {
-  id             String       @id @default(cuid())
-  organizationId String
-  url            String
-  secretHash     String
-  events         String[]
-  active         Boolean      @default(true)
-  createdAt      DateTime     @default(now())
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  id              String            @id @default(cuid())
+  organizationId  String
+  url             String
+  secretHash      String
+  secretEncrypted String?
+  events          String[]
+  active          Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deliveries      WebhookDelivery[]
 
   @@index([organizationId, active])
+}
+
+model WebhookDelivery {
+  id             String                @id @default(cuid())
+  endpointId     String
+  eventId        String
+  eventType      String
+  payload        Json
+  status         WebhookDeliveryStatus @default(PENDING)
+  attemptCount   Int                   @default(0)
+  nextAttemptAt  DateTime              @default(now())
+  processingToken String?
+  processingExpiresAt DateTime?
+  lastStatusCode Int?
+  lastError      String?               @db.Text
+  deliveredAt    DateTime?
+  createdAt      DateTime              @default(now())
+  endpoint       WebhookEndpoint       @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@unique([endpointId, eventId])
+  @@index([status, nextAttemptAt])
+  @@index([status, processingExpiresAt])
+  @@index([endpointId, createdAt])
+}
+
+model NovaRun {
+  id                String   @id @default(cuid())
+  organizationId    String
+  userId            String
+  sessionId         String?
+  parentRunId       String?
+  conversation      Json     @default("[]")
+  status            String   @default("PENDING")
+  message           String   @db.Text
+  context           Json     @default("{}")
+  response          Json?
+  transcript        Json     @default("[]")
+  modelSteps        Int      @default(0)
+  provider          String?
+  model             String?
+  attempts          Int      @default(0)
+  processingToken   String?
+  processingExpiresAt DateTime?
+  errorCode         String?
+  cancelledAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user              User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  calls             NovaToolCall[]
+  proposals         NovaProposal[]
+
+  @@index([organizationId, userId, createdAt])
+  @@index([status, processingExpiresAt])
+}
+
+model NovaToolCall {
+  id                String   @id @default(cuid())
+  runId             String
+  name              String
+  modelCallId       String?
+  arguments         Json
+  result            Json?
+  status            String   @default("PENDING")
+  errorCode         String?
+  createdAt         DateTime @default(now())
+  completedAt       DateTime?
+  run               NovaRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, createdAt])
+  @@unique([runId, modelCallId])
+}
+
+model NovaProposal {
+  id                String   @id @default(cuid())
+  runId             String
+  status            String   @default("PROPOSED")
+  actions           Json
+  fingerprint       String
+  contextHash       String
+  totalCredits      Int
+  expiresAt         DateTime
+  approvedAt        DateTime?
+  approvedById      String?
+  executedAt        DateTime?
+  resultEncrypted   String?  @db.Text
+  createdAt         DateTime @default(now())
+  run               NovaRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, status])
 }

@@ -1,15 +1,49 @@
-node_modules
-.next
-dist
-coverage
-.turbo
+# Dependencies and generated build output (all workspaces)
+node_modules/
+.next/
+out/
+dist/
+build/
+.turbo/
+.cache/
 *.tsbuildinfo
+
+# Local configuration and secrets; keep safe example templates
 .env
-.env.local
+.env.*
+*.env
+*.env.*
 !.env.example
+!.env.*.example
+!*.env.example
+!*.env.*.example
+.aws/
+.ssh/
+.codex/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Logs, test reports and coverage
 *.log
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# OS and editor-local files
 .DS_Store
-packages/database/generated
-playwright-report
-test-results
-uploads
+Thumbs.db
+.idea/
+*.swp
+*.swo
+
+# Generated database client and local runtime data
+packages/database/generated/
+uploads/
+backups/
+*.nsbackup
+*.dump
+*.sqlite
+*.sqlite3

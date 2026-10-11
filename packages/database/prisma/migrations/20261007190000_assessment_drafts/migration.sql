@@ -1,0 +1,3 @@
+ALTER TABLE "Assessment" ADD COLUMN "draft" JSONB,
+ADD COLUMN "draftRevision" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "draftSavedAt" TIMESTAMP(3);

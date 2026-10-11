@@ -1,7 +1,11 @@
 import { ArrowRight, CheckCircle2, CircleDot, Clock3 } from "lucide-react";
 import { notFound } from "next/navigation";
-import { LiveAnalytics, LiveCandidates, LiveClients, LiveMeetings } from "../../../components/live-workspace";
+import { LiveAnalytics, LiveCandidates, LiveClients, LiveMeetings, LiveStaffingPlacements } from "../../../components/live-workspace";
+import { WorkspaceMembers } from "../../../components/workspace-members";
+import { AccountSecurity } from "../../../components/account-security";
+import { DeveloperPlatformSettings } from "../../../components/developer-platform-settings";
 import { WorkspaceShell } from "../../../components/workspace-shell";
+import { NovaAssistant } from "../../../components/nova-assistant";
 
 const sections: Record<string, { title: string; eyebrow: string; description: string; active: string; items: Array<[string, string, string]> }> = {
   candidates: { title: "Talent pool", eyebrow: "Recruiting", description: "People, evidence, ownership, and every role they are connected to.", active: "Candidates", items: [["Maya Chen", "Platform engineering · 84 evidence score", "Review"], ["Lina Alvarez", "Data analytics · 91 evidence score", "Shortlisted"], ["Theo Nwosu", "Product design · 78 evidence score", "Interview"]] },
@@ -17,9 +21,12 @@ export default async function WorkspaceSection({ params }: { params: Promise<{ s
   const { section } = await params;
   const config = sections[section];
   if (!config) notFound();
+  if (section === "copilot") return <WorkspaceShell active="Ask Nova"><div className="page-title"><div><p className="eyebrow muted">Recruiter assistant</p><h1>Ask Nova</h1><p className="muted">Tell me what you need. I’ll ask for details only when needed.</p></div></div><div className="nova-full-page"><NovaAssistant /></div></WorkspaceShell>;
   if (section === "candidates") return <WorkspaceShell active="Candidates"><LiveCandidates /></WorkspaceShell>;
   if (section === "clients") return <WorkspaceShell active="Clients"><LiveClients /></WorkspaceShell>;
+  if (section === "placements") return <WorkspaceShell active="Placements"><LiveStaffingPlacements /></WorkspaceShell>;
   if (section === "meetings") return <WorkspaceShell active="Meetings"><LiveMeetings /></WorkspaceShell>;
   if (section === "analytics") return <WorkspaceShell active="Analytics"><LiveAnalytics /></WorkspaceShell>;
+  if (section === "settings") return <WorkspaceShell active="Settings"><div className="page-title"><div><p className="eyebrow muted" style={{ margin: "0 0 8px" }}>Administration</p><h1>Workspace settings</h1><span className="muted">Manage workspace access and your personal account security.</span></div></div><WorkspaceMembers /><AccountSecurity /><DeveloperPlatformSettings /></WorkspaceShell>;
   return <WorkspaceShell active={config.active}><div className="page-title"><div><p className="eyebrow muted" style={{ margin: "0 0 8px" }}>{config.eyebrow}</p><h1>{config.title}</h1><span className="muted">{config.description}</span></div><button className="button button-primary">Create new <ArrowRight size={16} /></button></div><section className="card panel"><div className="panel-head"><h2>Current workspace</h2><span className="tag"><CircleDot size={13} /> Live demo data</span></div>{config.items.map(([title, subtitle, status], index) => <div key={title} style={{ display: "grid", gridTemplateColumns: "42px 1fr auto", gap: 13, alignItems: "center", padding: "17px 4px", borderTop: "1px solid var(--line)" }}><div className="stat-icon">{index === 1 ? <Clock3 size={17} /> : <CheckCircle2 size={17} />}</div><div><strong>{title}</strong><div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{subtitle}</div></div><span className="tag">{status}</span></div>)}</section></WorkspaceShell>;
 }

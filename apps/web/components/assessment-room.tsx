@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertCircle, Check, ChevronRight, Clock3, Eye, Laptop, LoaderCircle, Mic, Save, ShieldCheck, Video } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type Stage = "LOADING" | "CHECK" | "CONSENT" | "INSTRUCTIONS" | "ACTIVE" | "COMPLETE" | "ERROR";
 
@@ -14,12 +14,17 @@ type AssessmentDetails = {
   jobTitle: string;
   durationMinutes: number;
   proctoringEnabled: boolean;
+  questions?: Array<{ id: string; label: string }>;
+  startedAt?: string | null;
+  draft?: { answers: Record<string, string>; questionIndex: number } | null;
+  draftRevision?: number;
+  draftSavedAt?: string | null;
 };
 
 type Evidence = { id: string; criterion: string; score: number; rationale: string; evidence: string };
 type Completion = { id: string; status?: string; score: number | null; summary: string | null; evidence?: Evidence[] };
 
-const questions = [
+const defaultQuestions = [
   { id: "q1", label: "Architecture", prompt: "Tell us about a distributed service you made more reliable. What failed, and what did you change?", hint: "Use a concrete example. Explain your own decisions." },
   { id: "q2", label: "Trade-offs", prompt: "A queue is building faster than workers can process it. Walk through how you would diagnose and stabilize the system.", hint: "Think aloud. We care about the sequence, not a memorized answer." },
   { id: "q3", label: "Collaboration", prompt: "Describe a technical decision you changed after another person challenged it.", hint: "What evidence changed your mind?" }
@@ -41,6 +46,8 @@ const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 async function candidateRequest<T>(token: string, path = "", init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiUrl}/candidate/assessments/${encodeURIComponent(token)}${path}`, {
     ...init,
+    cache: "no-store",
+    signal: init?.signal ?? AbortSignal.timeout(10_000),
     headers: { ...init?.headers, ...(init?.body ? { "Content-Type": "application/json" } : {}) }
   });
   const body = await response.json().catch(() => null) as T | { error?: { message?: string } } | null;
@@ -66,6 +73,33 @@ export function AssessmentRoom({ token }: { token: string }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [completion, setCompletion] = useState<Completion | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const revision = useRef(0);
+  const savedSnapshot = useRef("");
+  const saveBlocked = useRef(false);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const latestSnapshot = useRef("");
+  latestSnapshot.current = JSON.stringify({ answers, questionIndex });
+  const questions = useMemo(() => assessment.questions?.length ? assessment.questions.map((item, index) => ({ id: item.id, label: `Question ${index + 1}`, prompt: item.label, hint: "Answer in your own words and explain your reasoning." })) : defaultQuestions, [assessment.questions]);
+
+  function persistDraft(snapshot: string) {
+    const task = saveQueue.current.catch(() => undefined).then(async () => {
+      if (saveBlocked.current) throw new Error("Reload the saved draft before continuing.");
+      if (savedSnapshot.current === snapshot) return;
+      try {
+        const result = await candidateRequest<{ revision: number; savedAt: string }>(token, "/draft", { method: "PATCH", body: JSON.stringify({ ...JSON.parse(snapshot), revision: revision.current }) });
+        revision.current = result.revision;
+        savedSnapshot.current = snapshot;
+        if (latestSnapshot.current === snapshot) setSavedAt(new Date(result.savedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+      } catch (reason) {
+        saveBlocked.current = true;
+        setSaveError(reason instanceof Error ? reason.message : "The draft could not be saved.");
+        throw reason;
+      }
+    });
+    saveQueue.current = task;
+    return task;
+  }
 
   useEffect(() => {
     if (isDemo) return;
@@ -74,8 +108,17 @@ export function AssessmentRoom({ token }: { token: string }) {
       .then(({ assessment: loaded }) => {
         if (!active) return;
         setAssessment(loaded);
-        setSecondsLeft(Math.max(1, loaded.durationMinutes) * 60);
-        setStage(loaded.status === "IN_PROGRESS" ? "ACTIVE" : loaded.status === "SCHEDULED" ? "INSTRUCTIONS" : "CHECK");
+        const restored = { answers: loaded.draft?.answers ?? {}, questionIndex: Math.max(0, Math.min(loaded.draft?.questionIndex ?? 0, (loaded.questions?.length || defaultQuestions.length) - 1)) };
+        setAnswers(restored.answers);
+        setQuestionIndex(restored.questionIndex);
+        revision.current = loaded.draftRevision ?? 0;
+        savedSnapshot.current = JSON.stringify(restored);
+        setSavedAt(loaded.draftSavedAt ? new Date(loaded.draftSavedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null);
+        const elapsed = loaded.startedAt ? Math.max(0, Math.floor((Date.now() - new Date(loaded.startedAt).getTime()) / 1000)) : 0;
+        setSecondsLeft(Math.max(0, Math.max(1, loaded.durationMinutes) * 60 - elapsed));
+        if (["PROCESSING", "COMPLETED", "PROMOTED", "REJECTED"].includes(loaded.status)) { setCompletion({ id: loaded.id, status: loaded.status, score: null, summary: null }); setStage("COMPLETE"); }
+        else if (["FAILED", "CANCELLED"].includes(loaded.status)) { setError("This session is closed. Contact the hiring team."); setStage("ERROR"); }
+        else setStage(loaded.status === "IN_PROGRESS" ? "ACTIVE" : loaded.status === "SCHEDULED" ? "INSTRUCTIONS" : "CHECK");
       })
       .catch((reason: unknown) => {
         if (!active) return;
@@ -86,6 +129,7 @@ export function AssessmentRoom({ token }: { token: string }) {
   }, [isDemo, token]);
 
   useEffect(() => {
+    if (!isDemo) return;
     const saved = window.localStorage.getItem(storageKey);
     if (!saved) return;
     try {
@@ -95,16 +139,33 @@ export function AssessmentRoom({ token }: { token: string }) {
     } catch {
       window.localStorage.removeItem(storageKey);
     }
-  }, [storageKey]);
+  }, [isDemo, storageKey]);
+
+  useEffect(() => {
+    if (stage !== "ACTIVE" || pending) return;
+    const snapshot = JSON.stringify({ answers, questionIndex });
+    if (!isDemo && snapshot === savedSnapshot.current) return;
+    setSavedAt(null);
+    const save = window.setTimeout(() => {
+      if (isDemo) {
+        window.localStorage.setItem(storageKey, snapshot);
+        setSavedAt(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+      } else void persistDraft(snapshot).catch(() => undefined);
+    }, 700);
+    return () => window.clearTimeout(save);
+  }, [answers, questionIndex, stage, storageKey, isDemo, pending]);
 
   useEffect(() => {
     if (stage !== "ACTIVE") return;
-    const save = window.setTimeout(() => {
-      window.localStorage.setItem(storageKey, JSON.stringify({ answers, questionIndex }));
-      setSavedAt(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-    }, 350);
-    return () => window.clearTimeout(save);
-  }, [answers, questionIndex, stage, storageKey]);
+    const warnUnsaved = (event: BeforeUnloadEvent) => {
+      if (!isDemo && latestSnapshot.current !== savedSnapshot.current) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", warnUnsaved);
+    return () => window.removeEventListener("beforeunload", warnUnsaved);
+  }, [isDemo, stage]);
 
   useEffect(() => {
     if (stage !== "ACTIVE") return;
@@ -159,9 +220,10 @@ export function AssessmentRoom({ token }: { token: string }) {
       if (isDemo) {
         setCompletion({ id: demoAssessment.id, score: 84, summary: "Strong, reviewable evidence across the core criteria.", evidence: [] });
       } else {
+        await persistDraft(JSON.stringify({ answers, questionIndex }));
         const response = await candidateRequest<{ assessment: Completion; processing?: string }>(token, "/submit", {
           method: "POST",
-          body: JSON.stringify({ answers, response: questions.map((item) => `${item.label}: ${answers[item.id] ?? ""}`).join("\n\n") })
+          body: JSON.stringify({ answers, draftRevision: revision.current, response: questions.map((item) => `${item.prompt}: ${answers[item.id] ?? ""}`).join("\n\n") })
         });
         setCompletion({
           ...response.assessment,
@@ -185,8 +247,9 @@ export function AssessmentRoom({ token }: { token: string }) {
 
   return <main className="assessment-shell"><header className="assessment-header"><div><strong>Northstar</strong><span className="tag" style={{ marginLeft: 10 }}>{assessment.roundTitle}</span></div><div style={{ display: "flex", gap: 16, alignItems: "center" }}><span className="muted"><Eye size={14} style={{ display: "inline" }} /> {focusChanges} focus changes</span>{stage === "ACTIVE" && <strong><Clock3 size={15} style={{ display: "inline" }} /> {time}</strong>}</div></header>
     {stage === "CHECK" && <section className="assessment-center card"><span className="eyebrow muted">Step 1 of 3</span><h1>Let’s make sure the room is ready.</h1><p className="muted">This browser check is local. Device permissions are requested only when the selected round needs them.</p><div className="device-grid">{[[Laptop, "Browser", "Modern browser detected"], [Mic, "Microphone", assessment.type === "AI_INTERVIEW" ? "Permission requested at start" : "Not needed for this round"], [Video, "Camera", assessment.proctoringEnabled ? "Required by this round" : "Not needed for this round"]].map(([Icon, label, sub]) => { const I = Icon as typeof Laptop; return <div className="device-card" key={label as string}><I size={22} /><div><strong>{label as string}</strong><span>{checked ? "Ready" : sub as string}</span></div>{checked && <Check size={18} color="#19724d" />}</div>; })}</div><button className="button button-primary" onClick={() => checked ? setStage("CONSENT") : setChecked(true)}>{checked ? <>Continue <ChevronRight size={16} /></> : "Run browser check"}</button></section>}
-    {stage === "CONSENT" && <section className="assessment-center card"><span className="eyebrow muted">Step 2 of 3</span><h1>Know what is collected.</h1><p className="muted">This round stores your submitted responses, session timing, and focus-change count. A reviewer sees integrity events as context, never an automatic verdict.</p><label className="consent-row"><input type="checkbox" checked={consented} onChange={(event) => setConsented(event.target.checked)} /><span>I understand the assessment notice and consent to this session being processed for human review.</span></label>{error && <p role="alert" style={{ color: "#a83224" }}>{error}</p>}<button className="button button-primary" disabled={!consented || pending} onClick={acceptConsent}>{pending ? "Recording consent…" : "Accept and continue"} <ChevronRight size={16} /></button></section>}
-    {stage === "INSTRUCTIONS" && <section className="assessment-center card"><span className="eyebrow muted">Step 3 of 3</span><h1>{assessment.jobTitle}</h1><p className="muted">Three structured written questions · {assessment.durationMinutes} minutes · autosaved locally</p><div className="notice"><ShieldCheck size={21} /><span>Answer in your own words. You may explain assumptions and ask for clarification in a live round.</span></div><ul className="instruction-list"><li>Keep this tab open while the round is active.</li><li>Focus changes are counted and shown to the reviewer as context.</li><li>You can revise an answer before final submission.</li></ul>{error && <p role="alert" style={{ color: "#a83224" }}>{error}</p>}<button className="button button-primary" disabled={pending} onClick={startAssessment}>{pending ? "Starting…" : "Start assessment"} <ChevronRight size={16} /></button></section>}
-    {stage === "ACTIVE" && question && <section className="assessment-active"><aside className="question-rail"><span className="eyebrow muted">{assessment.roundTitle}</span><h2>{assessment.jobTitle}</h2><div className="question-steps">{questions.map((item, index) => <button key={item.id} className={index === questionIndex ? "current" : answers[item.id] ? "done" : ""} onClick={() => setQuestionIndex(index)}><span>{answers[item.id] ? <Check size={14} /> : index + 1}</span>{item.label}</button>)}</div><div className="autosave"><Save size={15} /><span>{savedAt ? `Saved at ${savedAt}` : "Autosave ready"}</span></div></aside><article className="answer-card card"><span className="tag">Question {questionIndex + 1} of {questions.length}</span><h1>{question.prompt}</h1><p className="muted">{question.hint}</p><textarea aria-label="Your answer" placeholder="Write your response here…" value={answers[question.id] ?? ""} onChange={(event) => setAnswers((value) => ({ ...value, [question.id]: event.target.value }))} /><div className="answer-actions"><span className="muted">{(answers[question.id] ?? "").length} characters</span>{questionIndex < questions.length - 1 ? <button className="button button-primary" disabled={!(answers[question.id] ?? "").trim()} onClick={() => setQuestionIndex((value) => value + 1)}>Save and continue <ChevronRight size={16} /></button> : <button className="button button-primary" disabled={pending || questions.some((item) => !(answers[item.id] ?? "").trim())} onClick={submitAssessment}>{pending ? "Submitting…" : "Submit assessment"} <Check size={16} /></button>}</div>{error && <p role="alert" style={{ color: "#a83224", marginTop: 14 }}>{error}</p>}</article></section>}
+    {stage === "CONSENT" && <section className="assessment-center card"><span className="eyebrow muted">Step 2 of 3</span><h1>Know what is collected.</h1><p className="muted">This round stores draft and submitted responses, session timing, and focus-change count. Drafts are saved to this session so you can resume on another device. A reviewer sees integrity events as context, never an automatic verdict.</p><label className="consent-row"><input type="checkbox" checked={consented} onChange={(event) => setConsented(event.target.checked)} /><span>I understand the assessment notice and consent to this session being processed for human review.</span></label>{error && <p role="alert" style={{ color: "#a83224" }}>{error}</p>}<button className="button button-primary" disabled={!consented || pending} onClick={acceptConsent}>{pending ? "Recording consent…" : "Accept and continue"} <ChevronRight size={16} /></button></section>}
+    {stage === "INSTRUCTIONS" && <section className="assessment-center card"><span className="eyebrow muted">Step 3 of 3</span><h1>{assessment.jobTitle}</h1><p className="muted">{questions.length} structured written questions · {assessment.durationMinutes} minutes · {isDemo ? "saved in this browser" : "drafts saved securely to your session"}</p><div className="notice"><ShieldCheck size={21} /><span>Answer in your own words. You may explain assumptions and ask for clarification in a live round.</span></div><ul className="instruction-list"><li>Keep this tab open while the round is active.</li><li>Focus changes are counted and shown to the reviewer as context.</li><li>You can revise an answer before final submission.</li></ul>{error && <p role="alert" style={{ color: "#a83224" }}>{error}</p>}<button className="button button-primary" disabled={pending} onClick={startAssessment}>{pending ? "Starting…" : "Start assessment"} <ChevronRight size={16} /></button></section>}
+    {stage === "ACTIVE" && saveError && <div className="notice" role="alert"><AlertCircle size={20} /><div><p>{saveError} Your unsaved text remains on this page; copy it before reloading.</p><button className="button button-light" onClick={() => { if (window.confirm("Reload the saved draft? Unsaved changes on this page will be discarded. Copy them first if needed.")) { savedSnapshot.current = latestSnapshot.current; window.location.reload(); } }}>Reload saved draft</button></div></div>}
+    {stage === "ACTIVE" && question && <section className="assessment-active"><aside className="question-rail"><span className="eyebrow muted">{assessment.roundTitle}</span><h2>{assessment.jobTitle}</h2><div className="question-steps">{questions.map((item, index) => <button key={item.id} className={index === questionIndex ? "current" : answers[item.id] ? "done" : ""} onClick={() => setQuestionIndex(index)}><span>{answers[item.id] ? <Check size={14} /> : index + 1}</span>{item.label}</button>)}</div><div className="autosave"><Save size={15} /><span>{savedAt ? `Saved ${isDemo ? "locally" : "to session"} at ${savedAt}` : saveError ? "Draft not saved" : "Unsaved changes"}</span></div></aside><article className="answer-card card"><span className="tag">Question {questionIndex + 1} of {questions.length}</span><h1>{question.prompt}</h1><p className="muted">{question.hint}</p><textarea aria-label="Your answer" placeholder="Write your response here…" value={answers[question.id] ?? ""} disabled={pending} maxLength={10_000} onChange={(event) => setAnswers((value) => ({ ...value, [question.id]: event.target.value }))} /><div className="answer-actions"><span className="muted">{(answers[question.id] ?? "").length} characters</span>{questionIndex < questions.length - 1 ? <button className="button button-primary" disabled={!(answers[question.id] ?? "").trim()} onClick={() => setQuestionIndex((value) => value + 1)}>Save and continue <ChevronRight size={16} /></button> : <button className="button button-primary" disabled={pending || !!saveError || questions.some((item) => !(answers[item.id] ?? "").trim())} onClick={submitAssessment}>{pending ? "Submitting…" : "Submit assessment"} <Check size={16} /></button>}</div>{error && <p role="alert" style={{ color: "#a83224", marginTop: 14 }}>{error}</p>}</article></section>}
   </main>;
 }

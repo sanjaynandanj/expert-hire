@@ -195,31 +195,63 @@ test.describe("live PostgreSQL workspace", () => {
       await expect(applyButton).toBeEnabled();
       await applyButton.click();
     }
-    await expect(mechanicalDrive.getByText("Applied")).toBeVisible();
+    await expect(mechanicalDrive.getByText(/^Applied$/)).toBeVisible();
   });
 
   test("recruiter can issue an invite and a candidate can submit it", async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== "chromium", "Create one live assessment per run.");
     await page.goto("/login");
     await page.getByRole("button", { name: "Sign in" }).click();
+    await page.getByRole("link", { name: "Candidates" }).click();
+    await page.getByRole("button", { name: "Add candidate" }).click();
+    const draftCandidateEmail = `draft-resume-${Date.now()}@candidate.test`;
+    await page.getByLabel("Full name").fill("Draft Resume Fictional Candidate");
+    await page.getByLabel("Email").fill(draftCandidateEmail);
+    await page.getByLabel("Headline").fill("Fictional draft resume verification");
+    await page.getByRole("button", { name: "Add candidate", exact: true }).last().click();
+    await expect(page.getByText(draftCandidateEmail).first()).toBeVisible();
+    const apiRoot = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:4000";
+    const organizationId = await page.evaluate(() => window.localStorage.getItem("northstar.organizationId"));
+    if (!organizationId) throw new Error("Fictional workspace was not selected.");
+    const headers = { "X-Organization-Id": organizationId };
+    const roleTitle = `Snapshot verification ${Date.now()}`;
+    const roleCreation = await page.request.post(`${apiRoot}/v1/jobs`, { headers, data: { title: roleTitle, description: "A fictional role used to verify original reliability evidence, bounded retries, recovery assumptions, and human-reviewed trade-offs after later configuration edits.", requirements: [{ name: "Original snapshot criterion", weight: 100 }] } });
+    expect(roleCreation.status()).toBe(201);
+    const role = await roleCreation.json();
+    const configure = await page.request.patch(`${apiRoot}/v1/jobs/${role.id}`, { headers, data: { rounds: [{ title: "Original snapshot round", type: "HUMAN_INTERVIEW", sequence: 1, durationMinutes: 20, questions: [
+      { id: "snapshot-q1", label: "Explain the original reliability evidence." },
+      { id: "snapshot-q2", label: "Describe queue recovery assumptions." },
+      { id: "snapshot-q3", label: "Describe a reviewed trade-off." }
+    ] }] } });
+    expect(configure.status()).toBe(200);
     await page.getByRole("link", { name: "Assessments" }).click();
     await expect(page.getByRole("heading", { name: "Assessments" })).toBeVisible();
-    await page.getByLabel("Assessment round").selectOption({ label: "Senior Platform Engineer · Systems coding" });
+    await page.getByLabel("Candidate", { exact: true }).selectOption({ label: `Draft Resume Fictional Candidate · ${draftCandidateEmail}` });
+    await page.getByLabel("Assessment round").selectOption({ label: `${roleTitle} · Original snapshot round` });
     await page.getByRole("button", { name: "Create invitation" }).click();
 
     const invite = page.locator(".notice a");
     await expect(invite).toBeVisible();
     const launchUrl = await invite.getAttribute("href");
     if (!launchUrl) throw new Error("Assessment launch URL is missing.");
+    const laterEdit = await page.request.patch(`${apiRoot}/v1/jobs/${role.id}`, { headers, data: {
+      title: "Later edited fictional role", requirements: [{ name: "Changed snapshot criterion", weight: 100 }],
+      rounds: [{ title: "Later edited coding round", type: "CODING_TEST", sequence: 1, durationMinutes: 55, questions: [{ id: "changed-question", label: "This later question must not replace the original." }] }]
+    } });
+    expect(laterEdit.status()).toBe(200);
     await page.goto(new URL(launchUrl).pathname);
     await page.getByRole("button", { name: "Run browser check" }).click();
     await page.getByRole("button", { name: "Continue" }).click();
     await page.getByRole("checkbox").check();
     await page.getByRole("button", { name: "Accept and continue" }).click();
     await page.getByRole("button", { name: "Start assessment" }).click();
+    await expect(page.getByRole("heading", { name: "Explain the original reliability evidence." })).toBeVisible();
 
     const answer = page.getByRole("textbox", { name: "Your answer" });
     await answer.fill("I would define service objectives, partition queue traffic with idempotent consumers, use bounded retries and dead letter handling, then validate partial failure recovery.");
+    await expect(page.getByText(/Saved to session at/)).toBeVisible();
+    await page.reload();
+    await expect(answer).toHaveValue("I would define service objectives, partition queue traffic with idempotent consumers, use bounded retries and dead letter handling, then validate partial failure recovery.");
     await page.getByRole("button", { name: "Save and continue" }).click();
     await answer.fill("I would measure queue age and worker saturation, identify poison messages, apply backpressure, and verify the rollback path.");
     await page.getByRole("button", { name: "Save and continue" }).click();
@@ -228,9 +260,13 @@ test.describe("live PostgreSQL workspace", () => {
     await expect(page.getByRole("heading", { name: "Your evidence is on its way." })).toBeVisible();
     await page.goto("/workspace/assessments");
     await expect(page.getByRole("heading", { name: "Assessments" })).toBeVisible();
-    const newestAssessment = page.locator("tbody tr").first();
+    const newestAssessment = page.locator("tbody tr").filter({ hasText: draftCandidateEmail });
     await expect(newestAssessment).toContainText("COMPLETED", { timeout: 15_000 });
+    await expect(newestAssessment).toContainText("Original snapshot round");
+    await expect(newestAssessment).not.toContainText("Later edited coding round");
     await newestAssessment.getByRole("link", { name: "Review report" }).click();
     await expect(page.getByRole("heading", { name: "Criterion evidence" })).toBeVisible();
+    await expect(page.getByText("Original snapshot criterion", { exact: true })).toBeVisible();
+    await expect(page.getByText("Changed snapshot criterion", { exact: true })).toHaveCount(0);
   });
 });

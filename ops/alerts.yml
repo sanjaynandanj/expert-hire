@@ -1,0 +1,37 @@
+groups:
+  - name: northstar-operations
+    rules:
+      - alert: NorthstarMetricsUnavailable
+        expr: up{job=~"northstar-api|northstar-worker"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Northstar metrics target is unavailable"
+          description: "Check the service, private network, and scrape-token configuration."
+      - alert: NorthstarApiServerErrors
+        expr: >-
+          (sum(rate(northstar_http_requests_total{job="northstar-api",status="5xx",route!~"/health|/ready"}[5m]))
+          / sum(rate(northstar_http_requests_total{job="northstar-api",route!~"/health|/ready"}[5m])) > 0.05)
+          and sum(increase(northstar_http_requests_total{job="northstar-api",route!~"/health|/ready"}[5m])) >= 20
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Northstar API server-error rate exceeds 5%"
+      - alert: NorthstarApiSlowResponses
+        expr: >-
+          (histogram_quantile(0.95, sum by (le) (rate(northstar_http_request_duration_seconds_bucket{job="northstar-api",route!~"/health|/ready"}[5m]))) > 2)
+          and sum(increase(northstar_http_request_duration_seconds_count{job="northstar-api",route!~"/health|/ready"}[5m])) >= 20
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Northstar API p95 latency exceeds two seconds"
+      - alert: NorthstarWorkerTerminalFailure
+        expr: sum by (task) (increase(northstar_worker_jobs_total{job="northstar-worker",outcome="failed"}[10m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Northstar worker recorded a terminal failure"
+          description: "Inspect worker logs and delivery history before replaying jobs."

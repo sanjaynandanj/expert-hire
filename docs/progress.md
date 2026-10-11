@@ -14,18 +14,48 @@ This checklist tracks the greenfield Northstar build against the product brief. 
 - [x] Tenant-scoped dashboard, jobs, candidates, assessments, clients, credits, student practice, and placement API routes
 - [x] Assessment credit debit, idempotent invitation creation, expiring hashed launch tokens, consent, integrity context, submission, and evidence-linked evaluation
 - [x] BullMQ/Redis assessment worker with retries and deterministic local evaluator
+- [x] Persisted queued evaluator input, bounded queue submission with pending recovery, atomic evaluation leases, fenced completion, and database-backed three-attempt budgets
 - [x] Audit writes for candidate/job/invitation, client terms, pipeline stages, practice, and placement actions
 - [x] Domain/provider/API unit tests plus desktop/mobile and live-data Playwright journeys
 - [x] Local migration and seed run against PostgreSQL
 - [x] Organization switching UI for memberships granted to the signed-in user
-- [x] Client creation/status, pipeline stage API CRUD, role status/rubric/round-plan APIs, and placement/offer state transitions
-- [ ] Account lifecycle: invitations, verification, reset, session revocation, and MFA
-- [ ] Candidate notes, meeting scheduling/attendance, full stage/job/client editing UI, member administration, and workspace settings
-- [ ] Staffing placement attribution, fee calculation from starts, invoices, guarantees, and reconciliation
-- [ ] University season/company management, bulk imports, offer caps/outcome reconciliation, and richer student self-service
+- [x] Client creation/status/commercial-term editing, pipeline stage API CRUD, role status/rubric/round-plan APIs, and placement/offer state transitions
+- [x] Account lifecycle foundation: owner/admin workspace invitations, verified invitation acceptance, email verification tokens, password reset, and session revocation
+- [x] Account lifecycle: public registration, email verification, password reset, TOTP MFA, one-time recovery codes, and session revocation
+- [ ] OAuth and administrator-assisted account recovery when MFA factors are lost
+- [x] Candidate notes, internal meeting scheduling/attendance, member administration, and account/workspace security settings
+- [x] Job/rubric/assessment-round editing UI, including promotion/rejection thresholds, question authoring, and proctoring settings
+- [x] Saved-round editor initialization and audited unused-round removal, with assessment-history protection
+- [x] Audited round retirement/restoration with stale-state conflicts, preserved active sessions/reports, hidden retired invitation options, and locked invitation-versus-retirement checks
+- [x] Concurrent invitation idempotency rechecks, request fingerprints, serialized credit debits, changed-request conflicts, and explicit insufficient-credit errors
+- [x] Invitation-time configuration snapshots consumed by launch, evaluation, and reports; frozen questions/rubrics despite subsequent edits, validated snapshot reads, and explicit legacy report fallback
+- [x] Pipeline stage creation, rename, and safe deletion UI
+- [x] Audited pipeline-stage ordering UI/API with complete-set validation, stale-order conflicts, serialized stage mutations, and preserved candidate assignments
+- [ ] External calendar invitations
+- [x] Staffing start attribution, fee snapshots/calculation, draft invoices, guarantee tracking, and audited invoice transitions
+- [ ] Accounting-provider integration, tax-compliant invoice documents, payment reconciliation, and guarantee/replacement policy
+- [x] University season/company management, configurable offer policies, per-season offer caps serialized at issuance, drive/application/offer lifecycle, invite-based roster import, and audited historical placement reconciliation
+- [x] Student academic-profile correction requests with university review, application history, offer details, and accept/decline responses
+- [x] Tenant-scoped student in-app notifications for application decisions, offers, and profile-correction reviews, with unread/read state
+- [ ] Email/SMS/push notification delivery through a production provider
 - [ ] Production AI, speech, transcription, email, billing, storage, and identity provider adapters
-- [ ] API-key management, public API sandbox/live keys, signed webhook delivery, and replay
-- [ ] Secure coding execution sandbox
+- [x] Scoped API-key issue/revoke and public jobs/candidates API; signed webhook endpoints, safe destination validation, queued delivery retries, history, and replay
+- [x] Public jobs/candidates cursor pagination with scoped totals, deterministic timestamp ties, visibility validation, and complete traversal beyond 100 rows
+- [x] Atomic candidate/audit/webhook persistence for workspace/API-key writes, versioned candidate create/update events, bounded recoverable queue submission, and audited competing-replay protection
+- [x] Atomic outbox coverage for all currently emitted pipeline, meeting, placement-application, and assessment events; locked idempotent assessment completion and no-op pipeline event suppression
+- [x] Atomic webhook-delivery leases, token-checked result writes, expired-worker recovery, and persistent six-attempt limits across queue recreation
+- [x] End-to-end webhook wall-clock deadlines covering DNS and TLS/request setup, late-DNS send prevention, and bounded receiver connections
+- [x] Separate API/worker liveness and database/Redis readiness checks with bounded worker dependency probes
+- [x] Bounded API/worker dependency probes with shared outstanding operations, real queue-Redis PING checks, uncached readiness responses, and outage/recovery tests
+- [x] Scheduled cleanup for expired auth artifacts and stale assessment launch tokens, with a configurable grace period
+- [x] Fail-closed coding-assessment invite, launch, submission, and worker guards; candidate code is never run in API/worker processes
+- [x] Expiring-token checks and coding fail-closed guards on every candidate action, uncached session responses, atomic consent/start transitions, and serialized active-session integrity writes
+- [x] Server-side partial-answer drafts, cross-device resume, optimistic revision conflicts, serialized browser autosaves, unsaved-change warnings, authored question rendering, and restored elapsed session timing
+- [ ] Isolated coding execution provider (requires dedicated sandbox infrastructure and independent review)
 - [ ] Nova tool server/MCP package, browser extension, and desktop shell
-- [ ] Production observability, backups, retention jobs, performance, accessibility, and independent security review
+- [x] Nova milestone 1: shared invitation service, agent persistence schema, typed internal evidence tools, exact expiring approval proposals and duplicate-safe atomic invitation execution (runtime/UI added in milestone 2; live-model verification still pending; see nova.md)
+- [x] Nova milestone 2 foundation: explicit configurable model adapters, persisted bounded runtime, ownership/retry/cancellation recovery, authenticated routes and cited approval UI with follow-up discussion (live model still pending; MCP omitted under the conditional safety requirement, see nova-acceptance.md)
+- [x] Authenticated API/worker Prometheus request/job, latency, and process metrics with private-scrape and alert-rule examples
+- [x] Authenticated encrypted PostgreSQL backup/verification and guarded isolated restore tooling, crypto tests in CI, and a verified fictional-data restore drill
+- [ ] Production metrics collection/alert routing, backups/restore automation, candidate-data retention policy/jobs, performance, accessibility, and independent security review
 - [ ] Trademark clearance for Northstar name and final brand assets

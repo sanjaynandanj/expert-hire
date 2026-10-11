@@ -1,6 +1,7 @@
 import { brand } from "@northstar/brand";
 import type { Metadata } from "next";
 import "./globals.css";
+import { NovaChatWidget } from "../components/nova-chat-widget";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://northstar.example"),
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" data-scroll-behavior="smooth">
-      <body>{children}</body>
+      <body>{children}<NovaChatWidget /></body>
     </html>
   );
 }

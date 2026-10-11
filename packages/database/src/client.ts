@@ -16,3 +16,8 @@ export const prisma = globalForPrisma.prisma ?? createClient();
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 export * from "../generated/client/client";
+export { persistWebhookEvent } from "./webhook-outbox";
+export { completeAssessment } from "./assessment-completion";
+export { claimAssessmentEvaluation, releaseAssessmentEvaluation, recoverAssessmentEvaluations, assessmentAttemptLimit, assessmentLeaseMs } from "./assessment-processing";
+export { snapshotAssessmentConfiguration, resolveAssessmentConfiguration, type AssessmentConfiguration } from "./assessment-configuration";
+export { claimWebhookDelivery, finishWebhookDelivery, recoverWebhookDeliveries, webhookAttemptLimit, webhookLeaseMs } from "./webhook-delivery";

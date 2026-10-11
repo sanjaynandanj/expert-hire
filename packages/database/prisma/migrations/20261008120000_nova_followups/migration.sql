@@ -1,0 +1,3 @@
+ALTER TABLE "NovaRun"
+ADD COLUMN "parentRunId" TEXT,
+ADD COLUMN "conversation" JSONB NOT NULL DEFAULT '[]';

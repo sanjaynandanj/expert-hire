@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 type Candidate = { id: string; name: string; email: string };
-type Job = { id: string; title: string; rounds: Array<{ id: string; title: string; type: string }> };
+type Job = { id: string; title: string; rounds: Array<{ id: string; title: string; type: string; retiredAt?: string | null }> };
 type Assessment = {
   id: string;
   status: string;
@@ -52,7 +52,8 @@ export function LiveAssessments() {
       setCandidates(candidateList.data);
       setJobs(jobList.data);
       setCandidateId((current) => current || candidateList.data[0]?.id || "");
-      setRoundId((current) => current || jobList.data[0]?.rounds[0]?.id || "");
+      const activeRounds = jobList.data.flatMap((job) => job.rounds).filter((round) => !round.retiredAt);
+      setRoundId((current) => activeRounds.some((round) => round.id === current) ? current : activeRounds[0]?.id ?? "");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Assessment data could not be loaded.");
     }
@@ -88,7 +89,7 @@ export function LiveAssessments() {
     }
   }
 
-  const rounds = jobs.flatMap((job) => job.rounds.map((round) => ({ ...round, jobTitle: job.title })));
+  const rounds = jobs.flatMap((job) => job.rounds.filter((round) => !round.retiredAt).map((round) => ({ ...round, jobTitle: job.title })));
 
   return <><div className="page-title"><div><p className="eyebrow muted" style={{ margin: "0 0 8px" }}>Recruiting</p><h1>Assessments</h1><span className="muted">Issue secure one-time links, then review saved evidence.</span></div></div>
     <form className="card panel workspace-form" onSubmit={createInvitation}><div className="panel-head"><div><h2>Invite a candidate</h2><span className="muted" style={{ fontSize: 12 }}>Credits are reserved atomically, and the link expires after 72 hours.</span></div></div><div className="form-grid"><label className="field"><span>Candidate</span><select className="input" value={candidateId} onChange={(event) => setCandidateId(event.target.value)} required>{candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {candidate.email}</option>)}</select></label><label className="field"><span>Assessment round</span><select className="input" value={roundId} onChange={(event) => setRoundId(event.target.value)} required>{rounds.map((round) => <option key={round.id} value={round.id}>{round.jobTitle} · {round.title}</option>)}</select></label></div>{error && <p role="alert" className="form-error">{error}</p>}{launchUrl && <div className="notice"><span><strong>Secure invitation created</strong><br/><a href={launchUrl} target="_blank" rel="noreferrer" style={{ textDecoration: "underline", overflowWrap: "anywhere" }}>{launchUrl}</a></span></div>}<button className="button button-primary" disabled={busy || !candidateId || !roundId}>{busy ? "Creating invitation…" : "Create invitation"}</button></form>

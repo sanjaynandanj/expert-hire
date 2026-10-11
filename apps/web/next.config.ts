@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@northstar/brand"],
   poweredByHeader: false,
   typedRoutes: false,
+  allowedDevOrigins: ["localhost", "127.0.0.1"],
   async headers() {
     return [
       {

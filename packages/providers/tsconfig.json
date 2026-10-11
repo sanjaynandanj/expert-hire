@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "types": ["node"],
     "declaration": true,
     "emitDeclarationOnly": true,
     "noEmit": false,

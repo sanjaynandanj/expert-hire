@@ -10,7 +10,7 @@ Northstar is a greenfield talent-intelligence platform for employers, staffing t
 - Employer workspace dashboard, ATS pipeline, jobs, candidates, meetings, clients, placements, analytics, copilot, campus, and settings surfaces
 - Candidate practice dashboard
 - Fastify `/v1` API with OpenAPI, rate limiting, security headers, structured errors, health checks, tenant scoping, job creation, and audit writes
-- Password login and tenant-scoped workspace APIs for jobs, candidates, assessment invitations, reports, credits, and university placement
+- Password login, revocable sessions, workspace member invitations, email verification, password recovery, and tenant-scoped workspace APIs
 - Redis/BullMQ assessment evaluation worker with a deterministic local-only provider
 - Prisma/PostgreSQL domain model covering tenancy, RBAC, jobs, rounds, assessments, evidence, integrity events, staffing clients, credits, campus placement, API keys, and webhooks
 - Deterministic assessment state-transition and job-validation tests
@@ -53,7 +53,7 @@ All local demo accounts use password `NorthstarDemo!`.
 | University placement owner | `placements@riverton.test` |
 | Student | `student@riverton.test` |
 
-Password login uses a seeded local account and sets a signed session cookie. Account verification, reset, OAuth, MFA, and session revocation are not implemented; see the known limitations before production use.
+Password login uses a seeded local account and sets a signed session cookie. Public workspace registration, email verification, invitations, password recovery, optional TOTP MFA, one-time recovery codes, and session revocation are available. Development action links are shown in the app and emails are captured by Mailpit at http://localhost:8025. OAuth remains unimplemented; see the known limitations before production use.
 
 ## Commands
 

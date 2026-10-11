@@ -1,0 +1,1 @@
+ALTER TABLE "Round" ADD COLUMN "retiredAt" TIMESTAMP(3);

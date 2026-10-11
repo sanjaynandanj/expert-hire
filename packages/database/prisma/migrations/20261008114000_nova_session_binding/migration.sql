@@ -1,0 +1,1 @@
+ALTER TABLE "NovaRun" ADD COLUMN "sessionId" TEXT;
